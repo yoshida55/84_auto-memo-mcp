@@ -60,8 +60,8 @@ def memo_write_both(
 
 
 @mcp.tool()
-def memo_read_context(log_path: str, config_path: str, log_lines: int = 10) -> dict:
-    """mis_log末尾 と last_config.json を1回で取得する（/memo-all 用）"""
+def memo_read_context(log_path: str, config_path: str, index_path: str = "", log_lines: int = 10) -> dict:
+    """mis_log末尾・last_config・インデックス全件を1回で取得する（/memo-all 用）"""
     import json
 
     log = Path(log_path)
@@ -77,7 +77,14 @@ def memo_read_context(log_path: str, config_path: str, log_lines: int = 10) -> d
         with config.open("r", encoding="utf-8") as f:
             config_data = json.load(f)
 
-    return {"log_tail": log_tail, "config": config_data}
+    index_content = ""
+    if index_path:
+        idx = Path(index_path)
+        if idx.exists():
+            with idx.open("r", encoding="utf-8") as f:
+                index_content = f.read()
+
+    return {"log_tail": log_tail, "config": config_data, "index": index_content}
 
 
 @mcp.tool()
@@ -91,9 +98,11 @@ def memo_write_all(
     index_line: str,
     new_last_line: int,
     last_submit_dir: str = "",
+    highlight_line: int = 0,
 ) -> dict:
     """01_memo.md・00_mis_log.md・インデックス・last_config を1回で書き込む（/memo-all 用）"""
     import json
+    import urllib.request
 
     writes = [
         (memo_path, memo_content),
@@ -116,11 +125,27 @@ def memo_write_all(
             indent=2,
         )
 
+    highlight_status = "skipped"
+    if highlight_line > 0:
+        try:
+            payload = json.dumps({"filePath": memo_path, "lineNumber": highlight_line}).encode()
+            req = urllib.request.Request(
+                "http://127.0.0.1:3848/highlight-line",
+                data=payload,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=2) as res:
+                highlight_status = res.read().decode()
+        except Exception:
+            highlight_status = "failed (ignored)"
+
     return {
         "memo": f"書き込み完了: {memo_path}",
         "log": f"書き込み完了: {log_path}",
         "index": f"書き込み完了: {index_path}",
         "config": f"更新完了: {config_path} (last_memo_line={new_last_line})",
+        "highlight": highlight_status,
     }
 
 
